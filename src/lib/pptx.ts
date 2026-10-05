@@ -88,7 +88,14 @@ export async function build(
   const slides: { n: number; ext: string }[] = [];
   const exts = new Set<string>();
   let n = 0, tick = performance.now();
+  // read ahead so disk I/O overlaps CRC/zip work
+  const ahead = new Map<number, Promise<Uint8Array>>();
+  const prefetch = (i: number) => {
+    if (i >= cand.length || ahead.has(i) || CONVERT.has((cand[i].file.name.split(".").pop() ?? "").toLowerCase())) return;
+    const p = cand[i].file.arrayBuffer().then((b) => new Uint8Array(b)); p.catch(() => {}); ahead.set(i, p);
+  };
   for (let i = 0; i < cand.length; i++) {
+    for (let k = 0; k < 4; k++) prefetch(i + k);
     const e = cand[i];
     let ext = e.file.name.split(".").pop()!.toLowerCase();
     let bytes: Uint8Array | null = null, info: Info | null = null;
@@ -99,8 +106,9 @@ export async function build(
         info = jpegInfo(bytes); ext = "jpg";
         if (info) info.orient = 1; // converters already applied orientation
       } else {
-        bytes = new Uint8Array(await e.file.arrayBuffer());
-        info = EMBED[ext](bytes);
+        const raw = await (ahead.get(i) ?? e.file.arrayBuffer().then((b) => new Uint8Array(b)));
+        ahead.delete(i);
+        info = EMBED[ext](raw); bytes = raw;
       }
     } catch { bytes = null; }
     if (!bytes || !info) { skipped.push({ path: e.path, reason: "corrupt or unreadable image" }); continue; }

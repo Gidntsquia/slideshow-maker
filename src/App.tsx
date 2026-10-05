@@ -162,7 +162,7 @@ export default function App() {
         <main className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
           <Logo size={72} />
           <h1 className="text-4xl font-semibold tracking-tight text-neutral-50">Slideshow Maker</h1>
-          <p className="max-w-md text-base text-neutral-400">Drop a folder of photos, check them, and download a PowerPoint slideshow. Nothing is uploaded.</p>
+          <p className="max-w-md text-base text-neutral-400">Turn a folder of photos into a photo gallery PowerPoint slideshow: one photo per slide.</p>
           <div className={`flex h-44 w-full max-w-xl items-center justify-center rounded-xl border-2 border-dashed text-lg transition-colors ${over ? "border-accent bg-accent/10 text-accent" : "border-line text-neutral-400"}`}>
             <span aria-live="polite">{loading ? "Reading folder…" : msg || "Drop a folder of images here"}</span>
           </div>

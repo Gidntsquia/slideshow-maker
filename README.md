@@ -1,6 +1,8 @@
 # Slideshow Maker 🖼️
 
-<!-- TODO: screenshot of the review grid with a folder of photos loaded (docs/review.png) -->
+<p align="center">
+  <img alt="The Slideshow Maker start page with a drop zone for a folder of images, a folder picker button and a settings menu" src="docs/main-page.png">
+</p>
 
 Turns a folder of photos into a PowerPoint slideshow, and optionally an MP4 video of the same show.
 You drop a folder, check the photos in a thumbnail grid, and download the .pptx. Everything runs

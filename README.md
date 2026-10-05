@@ -1,27 +1,55 @@
-# Slideshow Maker
+# Slideshow Maker 🖼️
 
-Drop a folder of photos, check them, and download a PowerPoint slideshow (and optionally an MP4). Runs fully in the browser; nothing is uploaded. Use Chrome or Edge.
+<!-- TODO: screenshot of the review grid with a folder of photos loaded (docs/review.png) -->
 
-## Run
+Turns a folder of photos into a PowerPoint slideshow, and optionally an MP4 video of the same show.
+You drop a folder, check the photos in a thumbnail grid, and download the .pptx. Everything runs
+in the browser and no photos are uploaded anywhere. Built with React, Vite and
+[fflate](https://github.com/101arrowz/fflate); the video is encoded with WebCodecs and
+[mp4-muxer](https://github.com/Vanilagy/mp4-muxer).
+
+## Quickstart 🚀
+
+Requires [Bun](https://bun.sh) and Chrome or Edge.
+
 ```
+git clone https://github.com/Gidntsquia/slideshow-maker
+cd slideshow-maker
 bun install
-bun run dev        # http://localhost:5173
-bun run build      # static copy in dist/ (serve with any static server, or bun run preview)
+bun run dev        # Open http://localhost:5173
 ```
 
-## How it works
-1. **Drop** a folder (or "or choose a folder"). Nothing is built or downloaded yet.
-2. **Review** the thumbnail grid in slide order. ✕ removes a photo (click it again to restore), drag to reorder, click to see it large exactly as it will sit on the slide (←/→ move, Esc closes). Skipped files are listed underneath.
-3. **Create slideshow**, then **Download**. Files are only saved when you click Download. Changing anything afterwards marks the result out of date until you Create again.
+Drop a folder of photos on the page, remove or reorder anything in the grid, then click
+Create slideshow and Download. Nothing is saved to disk until you click Download.
 
-Defaults give the same .pptx as before: 16:9, black background, fit whole, Wipe from right 2 s, advance after 5 s, click also advances.
+Other commands:
 
-## Settings (saved in the browser; "Reset to defaults" restores them)
-- **Transition**: None, Fade, Wipe, Push, Cover, Uncover, Split, Dissolve, Random Bars, Blinds, Checkerboard, Shape (circle), Zoom, or Random (one effect per slide, same in the .pptx and the video). Direction where the effect has one. Time 0.25–10 s.
-- **Timing**: 1–60 s per slide; "Advance automatically" off = click only.
-- **Picture**: Fit whole / Fill and crop, background (black, white, custom), slide shape (16:9, 4:3, 9:16), caption (off, file name, date taken).
-- **Photo order**: name (like Explorer), date taken oldest/newest (EXIF, else file date), shuffle. Choosing one after a manual reorder asks first.
-- **Self-running show**: saves `<folder>.ppsx`, which opens full screen, plays on its timings and loops until Esc.
-- **Also make a video (MP4)**: `<folder>.mp4`, 1080p (scaled to the slide shape), 30 fps H.264, no audio, same photos/order/transitions. Needs a browser with an H.264 encoder (WebCodecs); otherwise the option is disabled. Progress and Cancel are shown; Cancel keeps the PowerPoint.
+```
+bun run build      # Static copy in dist/, serve it with any static server
+bun run preview    # Serves dist/ locally
+uv run --with pillow scripts/make_testdata.py testdata/EvalTrip 9   # Makes a folder of test photos
+```
 
-JPEG/PNG/GIF/BMP are embedded untouched; HEIC/WebP are converted to JPEG (q 0.95); EXIF rotation is applied as a slide rotation, not a re-encode.
+## Features 🔬
+
+- Photos are shown in slide order. You can drag to reorder, remove a photo with ✕, and click one to see it as it will look on the slide.
+- 12 transitions plus a Random option. Each has an adjustable length, and most have a direction.
+- Slides advance on a timer, on click, or both.
+- Photos can fit inside the slide or fill and crop it, on a black, white or custom background, in 16:9, 4:3 or 9:16.
+- Optional captions with the file name or the date the photo was taken.
+- Sorts by file name, date taken (from EXIF), or shuffles.
+- Can save a self-running .ppsx that opens full screen and loops.
+- Can also export a 1080p MP4 with the same photos and transitions.
+- JPEG, PNG, GIF and BMP files go into the .pptx unchanged. HEIC and WebP are converted to JPEG.
+- Settings are remembered between visits.
+
+## Documentation 📚
+
+More details in [docs/](docs):
+
+- [Using the App](docs/Using-the-App.md) — drop, review, create, download steps
+- [Settings](docs/Settings.md) — every option and image format handling
+
+## License 📄
+
+[MIT](LICENSE).

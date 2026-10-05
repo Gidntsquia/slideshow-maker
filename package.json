@@ -10,6 +10,7 @@
   "dependencies": {
     "fflate": "^0.8.3",
     "heic-to": "^1.6.5",
+    "mp4-muxer": "^5.2.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

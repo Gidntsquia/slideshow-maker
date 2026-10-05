@@ -1,11 +1,14 @@
 import { Zip, ZipPassThrough } from "fflate";
 import { bmpInfo, gifInfo, jpegInfo, pngInfo, type Info } from "./imageinfo";
-import { sortEntries, type Entry } from "./walk";
+import { extOf } from "./photos";
+import { bgHex, SHAPES, type Settings } from "./settings";
+import { CAP_FONT, CAP_H, capColors, captionText } from "./slide";
+import { transitionEl, type Tr } from "./transitions";
 
 export interface Skipped { path: string; reason: string }
-export interface Result { blob: Blob | null; used: number; skipped: Skipped[] }
+export interface Item { file: File; path: string; name: string; dateMs: number; tr: Tr; id: number }
+export interface Result { blob: Blob | null; used: number; usedIds: number[]; skipped: Skipped[] }
 
-const W = 12192000, H = 6858000;
 const NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"';
 const HDR = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[c]!));
@@ -24,17 +27,35 @@ const ORIENT: Record<number, [number, boolean, boolean]> = {
   5: [270, true, false], 6: [90, false, false], 7: [90, true, false], 8: [270, false, false],
 };
 
-function slideXml(rid: string, name: string, info: Info): string {
+function slideXml(rid: string, name: string, info: Info, s: Settings, tr: Tr, caption: string): string {
+  const { w: W, h: H } = SHAPES[s.shape];
   const [rot, fh, fv] = ORIENT[info.orient] ?? ORIENT[1];
   const swap = rot === 90 || rot === 270;
   const dw = swap ? info.h : info.w, dh = swap ? info.w : info.h; // displayed pixel size
-  const s = Math.min(W / dw, H / dh);
-  const vw = Math.round(dw * s), vh = Math.round(dh * s);
+  const fill = s.fit === "fill";
+  const sc = (fill ? Math.max : Math.min)(W / dw, H / dh);
+  const vw = fill ? W : Math.round(dw * sc), vh = fill ? H : Math.round(dh * sc);
   const cx = swap ? vh : vw, cy = swap ? vw : vh; // unrotated shape extent
   const x = Math.round((W - cx) / 2), y = Math.round((H - cy) / 2);
   const attrs = (rot ? ` rot="${rot * 60000}"` : "") + (fh ? ' flipH="1"' : "") + (fv ? ' flipV="1"' : "");
-  const tr = (p14: string) => `<p:transition spd="slow"${p14} advClick="1" advTm="5000"><p:wipe dir="r"/></p:transition>`;
-  return HDR + `<p:sld ${NS}><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:effectLst/></p:bgPr></p:bg><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr><p:pic><p:nvPicPr><p:cNvPr id="2" name="Picture 1" descr="${esc(name)}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm${attrs}><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" Requires="p14">${tr(' p14:dur="2000"')}</mc:Choice><mc:Fallback>${tr("")}</mc:Fallback></mc:AlternateContent></p:sld>`;
+  let src = "";
+  if (fill) { // centered crop of the displayed image, expressed in the unrotated image's axes
+    const cropX = Math.max(0, Math.round((1 - W / (dw * sc)) / 2 * 100000)), cropY = Math.max(0, Math.round((1 - H / (dh * sc)) / 2 * 100000));
+    const [lr, tb] = swap ? [cropY, cropX] : [cropX, cropY];
+    if (lr || tb) src = `<a:srcRect l="${lr}" t="${tb}" r="${lr}" b="${tb}"/>`;
+  }
+  const el = transitionEl(tr);
+  const adv = ` advClick="1"` + (s.auto ? ` advTm="${Math.round(s.slideSec * 1000)}"` : "");
+  const trx = (p14: string) => el ? `<p:transition spd="slow"${p14}${adv}>${el}</p:transition>` : `<p:transition${adv}/>`;
+  const trans = el
+    ? `<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" Requires="p14">${trx(` p14:dur="${Math.round(s.transitionSec * 1000)}"`)}</mc:Choice><mc:Fallback>${trx("")}</mc:Fallback></mc:AlternateContent>`
+    : trx("");
+  let cap = "";
+  if (caption) {
+    const m = Math.min(W, H), ch = Math.round(m * CAP_H), { bg, fg } = capColors(s);
+    cap = `<p:sp><p:nvSpPr><p:cNvPr id="3" name="Caption"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="${H - ch}"/><a:ext cx="${W}" cy="${ch}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="${bg}"><a:alpha val="70000"/></a:srgbClr></a:solidFill></p:spPr><p:txBody><a:bodyPr wrap="square" lIns="91440" rIns="91440" tIns="0" bIns="0" anchor="ctr"><a:noAutofit/></a:bodyPr><a:lstStyle/><a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="en-US" sz="${Math.round(CAP_FONT * m / 12700 * 100)}" dirty="0"><a:solidFill><a:srgbClr val="${fg}"/></a:solidFill></a:rPr><a:t>${esc(caption)}</a:t></a:r></a:p></p:txBody></p:sp>`;
+  }
+  return HDR + `<p:sld ${NS}><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="${bgHex(s)}"/></a:solidFill><a:effectLst/></p:bgPr></p:bg><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr><p:pic><p:nvPicPr><p:cNvPr id="2" name="Picture 1" descr="${esc(name)}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${rid}"/>${src}<a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm${attrs}><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>${cap}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>${trans}</p:sld>`;
 }
 
 const EMPTY_TREE = '<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree>';
@@ -65,15 +86,13 @@ async function toJpeg(file: File): Promise<Uint8Array | null> {
 }
 
 export async function build(
-  input: Entry[], onProgress: (n: number, total: number) => void, skipped: Skipped[] = [],
+  input: Item[], settings: Settings, onProgress: (n: number, total: number) => void, skipped: Skipped[] = [],
 ): Promise<Result> {
-  const cand: Entry[] = [];
-  for (const e of sortEntries(input)) {
-    const ext = (e.file.name.split(".").pop() ?? "").toLowerCase();
-    if (e.file.name.includes(".") && (ext in EMBED || CONVERT.has(ext))) cand.push(e);
-    else skipped.push({ path: e.path, reason: "not an image" });
-  }
-  if (!cand.length) return { blob: null, used: 0, skipped };
+  const cand = input;
+  if (!cand.length) return { blob: null, used: 0, usedIds: [], skipped };
+  const { w: W, h: H } = SHAPES[settings.shape];
+  const ppsx = settings.selfRunning;
+  const usedIds: number[] = [];
 
   const parts: BlobPart[] = [];
   let pending: Uint8Array[] = [], pendingSize = 0;
@@ -91,13 +110,13 @@ export async function build(
   // read ahead so disk I/O overlaps CRC/zip work
   const ahead = new Map<number, Promise<Uint8Array>>();
   const prefetch = (i: number) => {
-    if (i >= cand.length || ahead.has(i) || CONVERT.has((cand[i].file.name.split(".").pop() ?? "").toLowerCase())) return;
+    if (i >= cand.length || ahead.has(i) || CONVERT.has(extOf(cand[i].file.name))) return;
     const p = cand[i].file.arrayBuffer().then((b) => new Uint8Array(b)); p.catch(() => {}); ahead.set(i, p);
   };
   for (let i = 0; i < cand.length; i++) {
     for (let k = 0; k < 4; k++) prefetch(i + k);
     const e = cand[i];
-    let ext = e.file.name.split(".").pop()!.toLowerCase();
+    let ext = extOf(e.file.name);
     let bytes: Uint8Array | null = null, info: Info | null = null;
     try {
       if (CONVERT.has(ext)) {
@@ -115,19 +134,20 @@ export async function build(
     if (ext === "jpeg") ext = "jpg";
     n++;
     put(`ppt/media/image${n}.${ext}`, bytes);
-    putS(`ppt/slides/slide${n}.xml`, slideXml("rId2", e.file.name, info));
+    putS(`ppt/slides/slide${n}.xml`, slideXml("rId2", e.file.name, info, settings, e.tr, captionText(settings, e.name, e.dateMs)));
     putS(`ppt/slides/_rels/slide${n}.xml.rels`, rels([["rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"], ["rId2", "image", `../media/image${n}.${ext}`]]));
-    slides.push({ n, ext }); exts.add(ext);
+    slides.push({ n, ext }); exts.add(ext); usedIds.push(e.id);
     onProgress(i + 1, cand.length);
     if (performance.now() - tick > 30) { await new Promise((r) => setTimeout(r)); tick = performance.now(); }
   }
-  if (!n) return { blob: null, used: 0, skipped };
+  if (!n) return { blob: null, used: 0, usedIds, skipped };
 
-  const ct = HDR + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${[...exts].map((x) => `<Default Extension="${x}" ContentType="${MIME[x]}"/>`).join("")}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${slides.map((s) => `<Override PartName="/ppt/slides/slide${s.n}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("")}</Types>`;
+  const ct = HDR + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${[...exts].map((x) => `<Default Extension="${x}" ContentType="${MIME[x]}"/>`).join("")}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.${ppsx ? "slideshow" : "presentation"}.main+xml"/>${ppsx ? '<Override PartName="/ppt/presProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presProps+xml"/>' : ""}<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${slides.map((s) => `<Override PartName="/ppt/slides/slide${s.n}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("")}</Types>`;
   putS("[Content_Types].xml", ct);
   putS("_rels/.rels", rels([["rId1", "officeDocument", "ppt/presentation.xml"]]));
-  putS("ppt/presentation.xml", HDR + `<p:presentation ${NS}><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>${slides.map((s) => `<p:sldId id="${255 + s.n}" r:id="rId${s.n + 2}"/>`).join("")}</p:sldIdLst><p:sldSz cx="${W}" cy="${H}"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>`);
-  putS("ppt/_rels/presentation.xml.rels", rels([["rId1", "slideMaster", "slideMasters/slideMaster1.xml"], ...slides.map((s): [string, string, string] => [`rId${s.n + 2}`, "slide", `slides/slide${s.n}.xml`]), [`rId${n + 3}`, "theme", "theme/theme1.xml"]]));
+  if (ppsx) putS("ppt/presProps.xml", HDR + `<p:presentationPr ${NS}><p:showPr loop="1" showNarration="1" useTimings="1"><p:present/><p:sldAll/></p:showPr></p:presentationPr>`);
+  putS("ppt/presentation.xml", HDR + `<p:presentation ${NS}><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>${slides.map((s) => `<p:sldId id="${255 + s.n}" r:id="rId${s.n + 2}"/>`).join("")}</p:sldIdLst><p:sldSz cx="${W}" cy="${H}"${settings.shape === "4:3" ? ' type="screen4x3"' : ""}/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>`);
+  putS("ppt/_rels/presentation.xml.rels", rels([["rId1", "slideMaster", "slideMasters/slideMaster1.xml"], ...slides.map((s): [string, string, string] => [`rId${s.n + 2}`, "slide", `slides/slide${s.n}.xml`]), [`rId${n + 3}`, "theme", "theme/theme1.xml"], ...(ppsx ? [[`rId${n + 4}`, "presProps", "presProps.xml"] as [string, string, string]] : [])]));
   putS("ppt/slideMasters/slideMaster1.xml", MASTER);
   putS("ppt/slideMasters/_rels/slideMaster1.xml.rels", rels([["rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"], ["rId2", "theme", "../theme/theme1.xml"]]));
   putS("ppt/slideLayouts/slideLayout1.xml", LAYOUT);
@@ -135,5 +155,5 @@ export async function build(
   putS("ppt/theme/theme1.xml", THEME);
   zip.end();
   parts.push(new Blob(pending as BlobPart[]));
-  return { blob: new Blob(parts, { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" }), used: n, skipped };
+  return { blob: new Blob(parts, { type: `application/vnd.openxmlformats-officedocument.presentationml.${ppsx ? "slideshow" : "presentation"}` }), used: n, usedIds, skipped };
 }

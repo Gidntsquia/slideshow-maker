@@ -1,2 +1,5 @@
 @import "tailwindcss";
-html,body,#root{height:100%;background:#000;color:#e5e5e5;font-family:ui-sans-serif,system-ui,sans-serif}
+@theme { --color-accent: #f2a93b; --color-ink: #0a0a0b; --color-panel: #141416; --color-line: #2a2a2e; }
+html,body,#root{height:100%;background:#0a0a0b;color:#e5e5e5;font-family:ui-sans-serif,system-ui,"Segoe UI",sans-serif}
+button:disabled{opacity:.45;cursor:not-allowed}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#2f2f34;border-radius:6px}

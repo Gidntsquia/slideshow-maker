@@ -101,7 +101,7 @@ export async function renderVideo(
   const enc = new VideoEncoder({ output: (c, m) => muxer.addVideoChunk(c, m), error: (e) => { encErr = e; } });
   let cfg: VideoEncoderConfig | null = null;
   for (const hw of ["prefer-hardware", "prefer-software"] as const) {
-    const c: VideoEncoderConfig = { codec: codecFor(W, H), width: W, height: H, bitrate: 8e6, framerate: FPS, hardwareAcceleration: hw, latencyMode: "quality" };
+    const c: VideoEncoderConfig = { codec: codecFor(W, H), width: W, height: H, bitrate: 8e6, framerate: FPS, hardwareAcceleration: hw, latencyMode: "realtime" };
     try { if ((await VideoEncoder.isConfigSupported(c)).supported) { cfg = c; break; } } catch { /* next */ }
   }
   if (!cfg) throw new Error("No H.264 encoder available");
